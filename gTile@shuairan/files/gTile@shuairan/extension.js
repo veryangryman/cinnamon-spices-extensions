@@ -48,7 +48,6 @@ let grids;
 let monitors;
 let area;
 let focusMetaWindow = false;
-let focusMetaWindowConnections = [];
 let focusMetaWindowPrivateConnections = [];
 let tracker;
 let gridSettingsButton = [];
@@ -67,6 +66,8 @@ const isFinalized = function(obj) {
 /*new GridSettingsButton(LABEL, NBCOL, NBROW) */
 function initSettings() {
   settings = new Settings.ExtensionSettings(preferences, 'gTile@shuairan');
+  //logging
+  settings.bindProperty(Settings.BindingDirection.IN, 'enableLogs', 'enableLogs');
   //hotkey
   settings.bindProperty(Settings.BindingDirection.IN, 'hotkey', 'hotkey', enableHotkey, null);
   //grid (nbCols and nbRows)
@@ -115,6 +116,18 @@ function updateGridSettings() {
 /*****************************************************************
                             FUNCTIONS
 *****************************************************************/
+/** Logging helper function
+ *
+ * Writes the log message with additional prefix depends on settings.
+ * If the log message should be write unconditionally, just pass `true`
+ * in the second parameter.
+ */
+function logMessage(message, alwaysLog = false) {
+    if (alwaysLog || preferences.enableLogs) {
+        global.log("[gtile] " + message);
+    }
+}
+
 function init() {}
 
 function enable() {
@@ -138,15 +151,14 @@ function enable() {
     'monitors-changed',
     reinitalize
   );
-  //global.log("KEY BINDNGS");
 }
 
 function disable() {
   // Key Bindings
   disableHotkey();
 
-  destroyGrids();
   resetFocusMetaWindow();
+  destroyGrids();
 }
 
 function enableHotkey() {
@@ -165,23 +177,17 @@ function reinitalize() {
 }
 
 function resetFocusMetaWindow() {
-  if (focusMetaWindowConnections.length > 0) {
-    for (var idx in focusMetaWindowConnections) {
-      focusMetaWindow.disconnect(focusMetaWindowConnections[idx]);
-    }
-  }
-
   if (focusMetaWindowPrivateConnections.length > 0) {
-    let actor = focusMetaWindow.get_compositor_private();
-    if (actor) {
-      for (let idx in focusMetaWindowPrivateConnections) {
-        actor.disconnect(focusMetaWindowPrivateConnections[idx]);
-      }
+    for (let data of focusMetaWindowPrivateConnections) {
+      try {
+        data.actor.disconnect(data.id);
+      } catch (e) {
+        logMessage(`exception: ${e.message}`, true);
+      };
     }
   }
 
   focusMetaWindow = false;
-  focusMetaWindowConnections = [];
   focusMetaWindowPrivateConnections = [];
 }
 
@@ -189,9 +195,11 @@ function initGrids() {
   grids = {};
   for (let monitorIdx in monitors) {
     let monitor = monitors[monitorIdx];
+    logMessage(`init grid: ${preferences.nbCols}/${preferences.nbRows}`);
     let grid = new Grid(parseInt(monitorIdx), monitor, 'gTile', preferences.nbCols, preferences.nbRows);
     let key = getMonitorKey(monitor);
     grids[key] = grid;
+
 
     Main.layoutManager.addChrome(grid.actor, {visibleInFullscreen: true});
     grid.actor.set_opacity(0);
@@ -216,7 +224,6 @@ function destroyGrids() {
 }
 
 function refreshGrids() {
-  //global.log("RefreshGrids");
   for (let gridIdx in grids) {
     let grid = grids[gridIdx];
     grid.refresh();
@@ -225,6 +232,8 @@ function refreshGrids() {
   Main.layoutManager._chrome.updateRegions();
 }
 
+
+/* Some Animation function. Disabled completely. */
 function moveGrids() {
   if (!status) {
     return;
@@ -286,25 +295,49 @@ function reset_window(metaWindow) {
 }
 
 function _getInvisibleBorderPadding(metaWindow) {
+
   let outerRect = metaWindow.get_outer_rect();
   let inputRect = metaWindow.get_input_rect();
-  let [borderX, borderY] = [outerRect.x - inputRect.x, outerRect.y - inputRect.y];
+
+  let borderX = (outerRect.x - inputRect.x)/2;
+  let borderY = (outerRect.y - inputRect.y)/2;
+
+  logMessage(
+`_getInvisibleBorderPadding:
+    window: ${metaWindow.get_title()}
+    clientRect W/H: ${clientRect.width}/${clientRect.height}
+    outerRect W/H: ${outerRect.width}/${outerRect.height}
+    border W/H: ${borderX}/${borderY}\n`);
 
   return [borderX, borderY];
 }
 
 function _getVisibleBorderPadding(metaWindow) {
+
   let clientRect = metaWindow.get_rect();
   let outerRect = metaWindow.get_outer_rect();
 
-  let borderX = outerRect.width - clientRect.width;
-  let borderY = outerRect.height - clientRect.height;
+  let borderX = (outerRect.width - clientRect.width)/2;
+  let borderY = (outerRect.height - clientRect.height)/2;
+
+  logMessage(
+`_getVisibleBorderPadding:
+    window: ${metaWindow.get_title()}
+    clientRect W/H: ${clientRect.width}/${clientRect.height}
+    outerRect W/H: ${outerRect.width}/${outerRect.height}
+    border W/H: ${borderX}/${borderY}\n`);
 
   return [borderX, borderY];
 }
 
 function move_maximize_window(metaWindow, x, y) {
   let [borderX, borderY] = _getInvisibleBorderPadding(metaWindow);
+
+  logMessage(
+`move_maximize_window:
+    window: ${metaWindow.get_title()}
+    borders W/H: ${borderX}/${borderY}
+    position orig X/Y: ${x}/${y}\n`);
 
   x = x - borderX;
   y = y - borderY;
@@ -315,6 +348,13 @@ function move_maximize_window(metaWindow, x, y) {
 
 function move_resize_window(metaWindow, x, y, width, height) {
   let [vBorderX, vBorderY] = _getVisibleBorderPadding(metaWindow);
+
+  logMessage(
+`move_resize_window:
+    window: ${metaWindow.get_title()}
+    size orig W/H: ${width}/${height}
+    borders X/Y: ${vBorderX}/${vBorderY}
+    position X/Y: ${x}/${y}\n`);
 
   width = width - vBorderX;
   height = height - vBorderY;
@@ -355,6 +395,12 @@ function getUsableScreenArea(monitor) {
 
   let width = right > left ? right - left : 0;
   let height = bottom > top ? bottom - top : 0;
+
+  logMessage(
+`getUsableScreenArea:
+    R/L/T/B: ${right}/${left}/${top}/${bottom}
+    L/T/W/H: ${left}/${top}/${width}/${height}`);
+
   return [left, top, width, height];
 }
 
@@ -378,9 +424,10 @@ function getNotFocusedWindowsOfMonitor(monitor) {
 }
 
 function _onFocus() {
+  resetFocusMetaWindow();
+
   let window = getFocusApp();
   if (!window) {
-    resetFocusMetaWindow();
     for (let gridIdx in grids) {
       let grid = grids[gridIdx];
       grid.topbar._set_title('gTile');
@@ -388,25 +435,21 @@ function _onFocus() {
     return;
   }
 
-  resetFocusMetaWindow();
-
   focusMetaWindow = window;
 
   let actor = focusMetaWindow.get_compositor_private();
+  /*
   if (actor) {
-    focusMetaWindowPrivateConnections.push(
-      actor.connect(
-        'size-changed',
-        moveGrids
-      )
-    );
-    focusMetaWindowPrivateConnections.push(
-      actor.connect(
-        'position-changed',
-        moveGrids
-      )
-    );
+    focusMetaWindowPrivateConnections.push({
+      "actor": actor,
+      "id": actor.connect('size-changed', moveGrids)
+    });
+    focusMetaWindowPrivateConnections.push({
+      "actor": actor,
+      "id": actor.connect('position-changed', moveGrids)
+    });
   }
+  */
 
   let app = tracker.get_window_app(focusMetaWindow);
   let title = focusMetaWindow.get_title();
@@ -415,10 +458,14 @@ function _onFocus() {
     let monitor = monitors[monitorIdx];
     let key = getMonitorKey(monitor);
     let grid = grids[key];
-    if (app) grid.topbar._set_app(app, title);
-    else grid.topbar._set_title(title);
+    if (app) {
+      grid.topbar._set_app(app, title);
+    } else {
+      grid.topbar._set_title(title);
+    };
   }
-  moveGrids();
+
+  /* moveGrids(); */
 }
 
 function showTiling() {
@@ -436,6 +483,7 @@ function showTiling() {
       let window = getFocusApp();
       let pos_x;
       let pos_y;
+      /* calculate the center of focused window */
       if (window.get_monitor() === parseInt(monitorIdx)) {
         pos_x = window.get_outer_rect().width / 2 + window.get_outer_rect().x;
         pos_y = window.get_outer_rect().height / 2 + window.get_outer_rect().y;
@@ -444,6 +492,7 @@ function showTiling() {
         pos_y = monitor.y + monitor.height / 2;
       }
 
+      /* show the gtile in the center of active window */
       grid.set_position(Math.floor(pos_x - grid.actor.width / 2), Math.floor(pos_y - grid.actor.height / 2));
 
       grid.show();
@@ -453,7 +502,7 @@ function showTiling() {
     status = true;
   }
 
-  moveGrids();
+  /* moveGrids(); */
 }
 
 function hideTiling() {
@@ -1314,6 +1363,11 @@ GridElementDelegate.prototype = {
     let areaHeight = (screenHeight / nbRows) * (maxY - minY + 1);
     let areaX = screenX + minX * (screenWidth / nbCols);
     let areaY = screenY + minY * (screenHeight / nbRows);
+
+    logMessage(`_computeAreaPositionSize
+      screen X/Y/W/H: ${screenX}/${screenY}/${screenWidth}/${screenHeight}
+      cols/rows: ${nbRows}/${nbCols}
+      area: X/Y/W/H: ${areaX}/${areaY}/${areaWidth}/${areaHeight}\n`);
 
     return [areaX, areaY, areaWidth, areaHeight];
   },

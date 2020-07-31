@@ -3,7 +3,6 @@
 	"type" : "header",
 	"description" : "Hotkeys:"
  },
-
  "hotkey": {
     "type" : "keybinding",
     "default" : "<Super>g",
@@ -120,15 +119,19 @@
  "seperator5" : {
 	"type" : "separator"
  },
+ "header5" : {
+    "type" : "header",
+    "description" : "Other:"
+ },
  "autoclose" : {
-	"type" : "checkbox",
-	"default" : "true",
-	"description" : "Auto-Close"
+    "type" : "checkbox",
+    "default" : "true",
+    "description" : "Auto-Close"
  },
  "animation" : {
-	"type" : "checkbox",
-	"default" : "true",
-	"description" : "Animation"
+    "type" : "checkbox",
+    "default" : "true",
+    "description" : "Animation"
  },
  "lastGridCols" : {
 	"type" : "generic",
@@ -137,5 +140,13 @@
  "lastGridRows" : {
 	"type" : "generic",
 	"default" : 4
- }
+ },
+ "seperator6" : {
+    "type" : "separator"
+ },
+ "enableLogs" : {
+    "type" : "checkbox",
+    "default" : false,
+    "description": "Debug Logging (see Melange - Log)"
+  }
 }
